@@ -20,12 +20,12 @@ jobs:
 
       - name: Engine tests, debug APK and lint
         run: |
-          set -o pipefail
+          set +e
           ./gradlew --no-daemon :engine:test :app:assembleDebug :app:lintDebug 2>&1 | tee build.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             # Surface the useful lines as annotations, which stay readable through the checks API.
-            grep -E "^e: |What went wrong|^> |error:|Error:|FAILED|Exception" build.log | head -60 > errors.txt || true
+            grep -E -A2 "^e: |What went wrong|^> |error:|Error:|FAILED" build.log | grep -v "^--" | head -90 > errors.txt
             split -l 6 errors.txt chunk_
             for f in chunk_*; do
               msg=$(sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g' "$f")
