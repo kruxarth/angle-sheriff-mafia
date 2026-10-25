@@ -34,6 +34,23 @@ jobs:
           fi
           exit $status
 
+      - name: Report lint warnings
+        if: always()
+        run: |
+          f=app/build/reports/lint-results-debug.xml
+          [ -f "$f" ] || exit 0
+          python3 - "$f" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          issues = ET.parse(sys.argv[1]).getroot().findall("issue")
+          print(f"{len(issues)} lint issues")
+          for i in issues[:40]:
+              loc = i.find("location")
+              file = loc.get("file", "").split("/app/")[-1] if loc is not None else ""
+              line = loc.get("line", "1") if loc is not None else "1"
+              msg = f"[{i.get('id')}] {i.get('message')}".replace("%", "%25").replace("\n", " ")
+              print(f"::warning file=app/{file},line={line},title=Lint {i.get('severity')}::{msg}")
+          PY
+
       - uses: actions/upload-artifact@v7
         with:
           name: angel-sheriff-mafia-debug-apk

@@ -292,4 +292,33 @@ class GameTest {
         val back = GameState.fromJson(s.toJson())
         assertEquals(s, back)
     }
+
+    @Test
+    fun finalSayMovesBetweenMafiaAcrossNights() {
+        var s = dealt()
+        val deciders = mutableSetOf<PlayerId>()
+        repeat(4) {
+            if (s.phase !is Phase.Night) return@repeat
+            val night = s.nights.last()
+            val mafiaTurns = night.turnOrder.filter { s.player(it).role == Role.MAFIA }
+            assertTrue(Game.hasFinalSay(s, mafiaTurns.last()))
+            if (mafiaTurns.size > 1) assertTrue(!Game.hasFinalSay(s, mafiaTurns.first()))
+            deciders += mafiaTurns.last()
+            // Everyone survives: the Angel guards the target, then nobody is voted out.
+            val target = s.idOf(Role.VILLAGER)
+            s = playNight(s, target = target, guard = target)
+            s = step(step(step(step(s, Action.Advance), Action.StartVote), Action.OpenVote(emptyList())), Action.Advance)
+        }
+        assertEquals(2, deciders.size, "Both Mafia members should get the final say on some night")
+    }
+
+    @Test
+    fun deadPlayersSkipNightTurns() {
+        var s = dealt()
+        val victim = s.idOf(Role.VILLAGER)
+        s = playNight(s, target = victim, guard = s.idOf(Role.SHERIFF))
+        s = step(step(step(step(s, Action.Advance), Action.StartVote), Action.OpenVote(emptyList())), Action.Advance)
+        assertTrue(victim !in s.nights.last().turnOrder)
+        assertTrue(victim !in Game.validNightTargets(s, s.playerOnTurn!!))
+    }
 }
