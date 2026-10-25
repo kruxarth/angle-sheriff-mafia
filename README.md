@@ -5,6 +5,15 @@ roles, collects everyone's secret night moves as the phone goes round the circle
 announces the morning out loud, runs the vote and keeps score. Nobody has to sit out as
 the moderator.
 
+<p>
+  <img src="docs/screenshots/01-title.png" width="160" alt="Title screen">
+  <img src="docs/screenshots/05-pass.png" width="160" alt="Pass the phone cover screen">
+  <img src="docs/screenshots/07-role-mafia.png" width="160" alt="Mafia wanted-poster role card">
+  <img src="docs/screenshots/08-night-mafia.png" width="160" alt="Night pick grid">
+  <img src="docs/screenshots/11-dawn-killed.png" width="160" alt="Dawn announcement">
+  <img src="docs/screenshots/14-open-vote.png" width="160" alt="Open vote">
+</p>
+
 ## How a round works
 
 1. **Set up.** Type everyone's names in seating order and pick house rules.

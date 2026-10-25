@@ -56,6 +56,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
@@ -375,7 +376,14 @@ fun PlankButton(
             if (!dead) Rivets()
             Text(
                 name.uppercase(),
-                style = Type.plank,
+                style = Type.plank.copy(
+                    fontSize = when {
+                        name.length > 11 -> 14.sp
+                        name.length > 8 -> 16.sp
+                        else -> Type.plank.fontSize
+                    },
+                ),
+                overflow = TextOverflow.Ellipsis,
                 color = when {
                     dead -> Western.LavenderDim
                     selected -> Western.Ink
@@ -384,7 +392,7 @@ fun PlankButton(
                 },
                 textDecoration = if (dead) TextDecoration.LineThrough else null,
                 maxLines = 1,
-                modifier = Modifier.padding(horizontal = 20.dp),
+                modifier = Modifier.padding(horizontal = 18.dp),
             )
         }
         if (tag != null && !dead) {

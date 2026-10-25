@@ -2,6 +2,7 @@ package com.angelsheriffmafia.app.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.angelsheriffmafia.app.GameViewModel
@@ -26,9 +27,17 @@ import com.angelsheriffmafia.engine.Phase
 import com.angelsheriffmafia.engine.VoteMode
 
 @Composable
-fun App(vm: GameViewModel) {
+fun App(vm: GameViewModel, onDarkScreen: (Boolean) -> Unit = {}) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val game = ui.game
+    // Night and private screens are dark; day and menu screens are light. Status bar icons follow.
+    val dark = ui.inGame && game != null && (
+        ui.after != null ||
+            game.phase is Phase.RoleReveal ||
+            game.phase is Phase.Night ||
+            (game.phase is Phase.Voting && game.rules.voteMode == VoteMode.SECRET)
+        )
+    SideEffect { onDarkScreen(dark) }
     if (ui.inGame && game != null) {
         GameScreens(ui, game, vm)
         return
