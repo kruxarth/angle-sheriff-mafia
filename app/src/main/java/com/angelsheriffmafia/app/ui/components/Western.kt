@@ -499,7 +499,16 @@ fun ThumbPad(label: String, hint: String, onPressChange: (Boolean) -> Unit, modi
                     pressed = it
                     onPressChange(it)
                 }
-                .semantics { contentDescription = "$label. $hint" },
+                // With TalkBack, a double tap shows the secret and another hides it.
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "$label. $hint"
+                    onClick {
+                        pressed = !pressed
+                        onPressChange(pressed)
+                        true
+                    }
+                },
             contentAlignment = Alignment.Center,
         ) { Fingerprint(44.dp) }
         Spacer(Modifier.width(16.dp))
