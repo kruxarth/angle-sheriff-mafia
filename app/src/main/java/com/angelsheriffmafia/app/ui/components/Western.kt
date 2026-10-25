@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -49,6 +50,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
@@ -62,6 +65,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.angelsheriffmafia.app.R
 import com.angelsheriffmafia.app.ui.theme.Type
 import com.angelsheriffmafia.app.ui.theme.Western
 import kotlin.math.PI
@@ -119,8 +123,17 @@ fun NightBackground(content: @Composable BoxScope.() -> Unit) {
                     drawCircle(if (next() > 0.3f) Western.Cream else Western.Lavender, r, Offset(x, y), alpha = 0.55f + next() * 0.45f)
                 }
             },
-        content = content,
-    )
+    ) {
+        // The town asleep along the bottom edge.
+        Image(
+            painterResource(R.drawable.art_town_night),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.BottomCenter,
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(150.dp),
+        )
+        content()
+    }
 }
 
 /** Wooden plank wall behind role cards. */
@@ -196,7 +209,7 @@ fun Ribbon(text: String, modifier: Modifier = Modifier) {
 
 /** A stamped label, like ink on a poster. */
 @Composable
-fun Stamp(text: String, color: Color = Western.Stamp, modifier: Modifier = Modifier, angle: Float = -4f) {
+fun Stamp(text: String, modifier: Modifier = Modifier, color: Color = Western.Stamp, angle: Float = -4f) {
     Box(
         modifier
             .rotate(angle)
