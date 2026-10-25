@@ -42,7 +42,7 @@ so the final say moves around.
 
 ## Building
 
-Requirements: JDK 17 and the Android SDK (API 35).
+Requirements: JDK 17 and the Android SDK (API 36).
 
 ```sh
 ./gradlew :engine:test           # rules engine tests
