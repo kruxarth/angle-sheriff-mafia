@@ -209,7 +209,7 @@ fun TableScreen(ui: TableUi, actions: TableActions, previewHolding: Boolean = fa
                 }
             }
         }
-        if (peeking && me != null && game != null) {
+        if (peeking && me != null) {
             Box(
                 Modifier.fillMaxSize().background(Western.NightTop.copy(alpha = 0.94f)).padding(24.dp),
                 contentAlignment = Alignment.Center,
