@@ -32,6 +32,11 @@ enum class NarratorLine(val key: String, val text: String) {
     NOBODY_OUT("nobody_out", "Nobody leaves town today."),
     TOWN_WINS("town_wins", "The Mafia are gone. The town of Dry Gulch is safe."),
     MAFIA_WINS("mafia_wins", "The Mafia have taken over Dry Gulch."),
+
+    // Games played on everyone's own phone, read out by the host's phone.
+    DEAL_OWN("deal_own", "Welcome to Dry Gulch. Check your phone for your role, and keep it to yourself."),
+    NIGHT_FALLS_OWN("night_falls_own", "Night falls on Dry Gulch. Make your choice on your phone, and keep your eyes to yourself."),
+    QUIET_NIGHT("quiet_night", "It was a quiet night. Nobody was attacked."),
 }
 
 sealed interface Say {

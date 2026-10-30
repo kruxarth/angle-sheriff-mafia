@@ -25,11 +25,29 @@ data class Player(
 }
 
 @Serializable
+enum class PlayMode {
+    /** One phone goes round the circle and every move is made on it in turn. */
+    PASS_PHONE,
+
+    /**
+     * Everyone plays on their own phone at the same time, joined to a host phone over the
+     * local network. Night picks and votes happen all at once, in any order.
+     */
+    OWN_PHONES,
+}
+
+@Serializable
 enum class VoteMode {
-    /** Everyone points at once, and one person taps who got the most votes. */
+    /**
+     * Everyone points at once, and one person taps who got the most votes. With own
+     * phones, everyone votes on their phone and the result shows who voted for whom.
+     */
     OPEN,
 
-    /** The phone goes round once more and each player votes in private. */
+    /**
+     * The phone goes round once more and each player votes in private. With own phones,
+     * the result shows only the count until the end-of-game replay.
+     */
     SECRET,
 }
 
@@ -59,6 +77,8 @@ data class Rules(
     val voteWhenTimeRunsOut: Boolean = false,
     /** Seconds before Confirm unlocks on a night turn, so every role takes the same time. */
     val minTurnSeconds: Int = 8,
+    /** Own phones: the longest a night can last. It ends sooner once everyone has chosen. */
+    val nightSeconds: Int = 60,
 ) {
     companion object {
         const val MIN_PLAYERS = 5
@@ -117,6 +137,10 @@ sealed interface Phase {
     @Serializable
     data class RoleReveal(val index: Int) : Phase
 
+    /** Own phones: everyone checks their role at once. Night falls when all have [seen] theirs. */
+    @Serializable
+    data class Deal(val seen: Set<PlayerId> = emptySet()) : Phase
+
     @Serializable
     data class Night(val night: Int, val turn: Int) : Phase
 
@@ -124,11 +148,15 @@ sealed interface Phase {
     data class Dawn(val day: Int) : Phase
 
     @Serializable
-    data class Discussion(val day: Int, val startedAtMillis: Long? = null) : Phase
+    data class Discussion(val day: Int, val startedAtMillis: Long? = null, val extraSeconds: Int = 0) : Phase {
+        /** When the clock runs out, or null before it starts. */
+        fun endsAtMillis(rules: Rules): Long? = startedAtMillis?.let { it + (rules.discussionSeconds + extraSeconds) * 1000L }
+    }
 
     /**
      * Voting. [candidates] is everyone alive, or only the tied players on a revote.
-     * [turn] indexes the living players for a secret vote.
+     * [turn] indexes the living players for a secret vote. With own phones [turn] is unused
+     * and [votes] fill up in any order.
      */
     @Serializable
     data class Voting(

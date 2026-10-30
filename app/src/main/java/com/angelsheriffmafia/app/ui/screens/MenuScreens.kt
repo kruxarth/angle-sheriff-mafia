@@ -60,8 +60,20 @@ fun OutlinedTitle(text: String, size: TextUnit, fill: Color, modifier: Modifier 
     }
 }
 
+/**
+ * [onTable] goes back to a table this phone is hosting or sitting at, when [atTable] is set.
+ * [canContinue] offers the pass-around game in progress.
+ */
 @Composable
-fun TitleScreen(canContinue: Boolean, onContinue: () -> Unit, onNewGame: () -> Unit, onHowToPlay: () -> Unit) {
+fun TitleScreen(
+    canContinue: Boolean,
+    onContinue: () -> Unit,
+    onNewGame: () -> Unit,
+    onHowToPlay: () -> Unit,
+    onJoin: () -> Unit = {},
+    atTable: Boolean = false,
+    onTable: () -> Unit = {},
+) {
     SunburstBackground(centerYFraction = 0.62f) {
         Column(Modifier.fillMaxSize().systemBarsPadding()) {
             Column(
@@ -69,7 +81,7 @@ fun TitleScreen(canContinue: Boolean, onContinue: () -> Unit, onNewGame: () -> U
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Ribbon("One phone · whole town")
+                Ribbon("A Wild West party game")
                 Column(
                     Modifier.rotate(-4f).padding(top = 6.dp).semantics { heading() },
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -114,13 +126,70 @@ fun TitleScreen(canContinue: Boolean, onContinue: () -> Unit, onNewGame: () -> U
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (canContinue) {
+                if (atTable) {
+                    BigButton("Back to the table", onTable, color = Western.Teal, textColor = Western.Ink)
+                } else if (canContinue) {
                     BigButton("Continue game", onContinue, color = Western.Teal, textColor = Western.Ink)
-                    Spacer(Modifier.height(2.dp))
                 }
-                BigButton(if (canContinue) "New game" else "Start a game", onNewGame)
-                LinkButton("How to play", onHowToPlay)
+                BigButton(if (canContinue || atTable) "New game" else "Start a game", onNewGame)
+                BigButton("Join a game", onJoin, color = Western.Mustard, textColor = Western.Ink, height = 56.dp)
+                Row(horizontalArrangement = Arrangement.Center) {
+                    if (atTable && canContinue) LinkButton("Continue game", onContinue)
+                    LinkButton("How to play", onHowToPlay)
+                }
             }
+        }
+    }
+}
+
+/** Pass one phone around, or host a table that friends join from their own phones. */
+@Composable
+fun PlayModeScreen(onPassAround: () -> Unit, onHost: () -> Unit, onBack: () -> Unit) {
+    SunburstBackground(centerYFraction = 0.1f) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .systemBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 22.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Ribbon("New game")
+                Spacer(Modifier.weight(1f))
+                LinkButton("Back", onBack)
+            }
+            Text("How are you playing?", style = Type.headline, color = Western.Ink, modifier = Modifier.semantics { heading() })
+            ModeCard(
+                title = "Pass one phone around",
+                body = "Everyone plays on this phone, one at a time. No Wi-Fi needed.",
+                button = "Pass the phone",
+                onClick = onPassAround,
+            )
+            ModeCard(
+                title = "Everyone on their own phone",
+                body = "This phone hosts the table. Friends join over your Wi-Fi or hotspot, in their browser with no app, " +
+                    "or with the app. Night picks and votes happen on everyone's phone at once.",
+                button = "Host a table",
+                onClick = onHost,
+                color = Western.Teal,
+            )
+            Text(
+                "Joining a friend's table? Go back and tap Join a game, or scan the code on their screen.",
+                style = Type.body.copy(fontSize = 15.sp),
+                color = Western.Ink,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModeCard(title: String, body: String, button: String, onClick: () -> Unit, color: Color = Western.Magenta) {
+    PaperNote(Modifier.fillMaxWidth(), angle = 0f) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(title, style = Type.title, color = Western.Ink, modifier = Modifier.semantics { heading() })
+            Text(body, style = Type.body, color = Western.Ink)
+            BigButton(button, onClick, color = color, textColor = if (color == Western.Teal) Western.Ink else Western.Cream, height = 56.dp)
         }
     }
 }
@@ -149,7 +218,7 @@ fun HowToPlayScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Ribbon("How to play")
-            Text("One phone runs the whole game", style = Type.headline, color = Western.Ink, modifier = Modifier.semantics { heading() })
+            Text("One phone, or everyone's", style = Type.headline, color = Western.Ink, modifier = Modifier.semantics { heading() })
             Section(
                 "The roles",
                 "Mafia know each other and pick one person to get rid of each night.\n" +
@@ -178,6 +247,13 @@ fun HowToPlayScreen(onBack: () -> Unit) {
                 "Morning",
                 "Put the phone in the middle. The narrator says what happened. Talk it over while the clock runs, then vote: " +
                     "point at once on three and tap who got the most votes, or pass the phone round for a secret vote.",
+            )
+            Section(
+                "Everyone on their own phone",
+                "One phone hosts the table. Everyone else joins the same Wi-Fi or the host's hotspot and scans the code on " +
+                    "the host's screen. It opens in the browser, so nobody needs the app. Friends who have it tap Join a game. " +
+                    "Cards, night picks and votes all happen on your own phone at the same time. Mafia see each other's picks " +
+                    "live and lock in when they agree. If the night runs out first, the most picks win.",
             )
             Section(
                 "Winning",

@@ -96,7 +96,7 @@ private fun GlyphButton(glyph: Glyph, description: String, enabled: Boolean = tr
 }
 
 @Composable
-private fun inkFieldColors() = OutlinedTextFieldDefaults.colors(
+internal fun inkFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedTextColor = Western.Ink,
     unfocusedTextColor = Western.Ink,
     focusedBorderColor = Western.Ink,
@@ -295,11 +295,16 @@ private fun PlayerRow(
 
 /* ---------- House rules ---------- */
 
+/**
+ * The house rules. With [ownPhones], for a hosted table, voting and night timing read as they
+ * work there: everyone votes on their own phone, and the night has a time limit instead of
+ * turns. [players] counts who's at the table, for the Mafia suggestion.
+ */
 @Composable
-fun RulesScreen(setup: Setup, onChange: (Setup) -> Unit, onDone: () -> Unit) {
+fun RulesScreen(setup: Setup, onChange: (Setup) -> Unit, onDone: () -> Unit, ownPhones: Boolean = false, players: Int = setup.players.size) {
     val rules = setup.rules
     fun set(r: Rules) = onChange(setup.copy(rules = r))
-    val count = setup.players.size
+    val count = players
     Column(
         Modifier
             .fillMaxSize()
@@ -328,9 +333,15 @@ fun RulesScreen(setup: Setup, onChange: (Setup) -> Unit, onDone: () -> Unit) {
 
         Toggle("Reveal a player's role when they're out", rules.revealRoleOnDeath) { set(rules.copy(revealRoleOnDeath = it)) }
 
-        Choice("Voting", VoteMode.entries, rules.voteMode, label = {
-            if (it == VoteMode.OPEN) "Point on three" else "Secret ballot"
-        }) { set(rules.copy(voteMode = it)) }
+        if (ownPhones) {
+            Choice("Votes", VoteMode.entries, rules.voteMode, label = {
+                if (it == VoteMode.OPEN) "Show who voted" else "Only the count"
+            }) { set(rules.copy(voteMode = it)) }
+        } else {
+            Choice("Voting", VoteMode.entries, rules.voteMode, label = {
+                if (it == VoteMode.OPEN) "Point on three" else "Secret ballot"
+            }) { set(rules.copy(voteMode = it)) }
+        }
 
         Choice("On a tie", TieRule.entries, rules.tieRule, label = {
             when (it) {
@@ -347,14 +358,25 @@ fun RulesScreen(setup: Setup, onChange: (Setup) -> Unit, onDone: () -> Unit) {
         }
         Toggle("Go straight to the vote when time runs out", rules.voteWhenTimeRunsOut) { set(rules.copy(voteWhenTimeRunsOut = it)) }
 
-        Choice("Shortest night turn", listOf(5, 8, 12), rules.minTurnSeconds, label = { "$it sec" }) {
-            set(rules.copy(minTurnSeconds = it))
+        if (ownPhones) {
+            Choice("Longest night", listOf(45, 60, 90, 120), rules.nightSeconds, label = { formatClock(it) }) {
+                set(rules.copy(nightSeconds = it))
+            }
+            Text(
+                "Everyone picks on their own phone at the same time. Morning comes once they all have, or when the night runs out.",
+                style = Type.body.copy(fontSize = 14.sp),
+                color = Western.PaperText,
+            )
+        } else {
+            Choice("Shortest night turn", listOf(5, 8, 12), rules.minTurnSeconds, label = { "$it sec" }) {
+                set(rules.copy(minTurnSeconds = it))
+            }
+            Text(
+                "Every night turn lasts at least this long, so a villager tapping fast looks the same as a Mafia member thinking hard.",
+                style = Type.body.copy(fontSize = 14.sp),
+                color = Western.PaperText,
+            )
         }
-        Text(
-            "Every night turn lasts at least this long, so a villager tapping fast looks the same as a Mafia member thinking hard.",
-            style = Type.body.copy(fontSize = 14.sp),
-            color = Western.PaperText,
-        )
 
         Toggle("Narrator voice", setup.narratorOn) { onChange(setup.copy(narratorOn = it)) }
 
@@ -363,7 +385,7 @@ fun RulesScreen(setup: Setup, onChange: (Setup) -> Unit, onDone: () -> Unit) {
 }
 
 @Composable
-private fun Toggle(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
+internal fun Toggle(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()

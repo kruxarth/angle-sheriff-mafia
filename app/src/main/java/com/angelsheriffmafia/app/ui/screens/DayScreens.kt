@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -61,15 +62,16 @@ import com.angelsheriffmafia.app.ui.theme.Western
 import com.angelsheriffmafia.app.ui.theme.art
 import com.angelsheriffmafia.app.ui.theme.color
 import com.angelsheriffmafia.app.ui.theme.title
-import com.angelsheriffmafia.engine.Game
 import com.angelsheriffmafia.engine.GameState
 import com.angelsheriffmafia.engine.Phase
 import com.angelsheriffmafia.engine.PlayerId
+import com.angelsheriffmafia.engine.Replay
+import com.angelsheriffmafia.engine.StoryLine
 import com.angelsheriffmafia.engine.Role as GameRole
 import com.angelsheriffmafia.engine.Team
 import kotlinx.coroutines.delay
 
-private fun roleWord(role: GameRole) = when (role) {
+internal fun roleWord(role: GameRole) = when (role) {
     GameRole.MAFIA -> "Mafia"
     GameRole.ANGEL -> "the Angel"
     GameRole.SHERIFF -> "the Sheriff"
@@ -83,7 +85,7 @@ private fun aliveLine(game: GameState): String {
 
 /** Orange ground strip at the bottom of day screens, where the actions live. */
 @Composable
-private fun DayFooter(content: @Composable () -> Unit) {
+internal fun DayFooter(content: @Composable () -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -98,20 +100,49 @@ private fun DayFooter(content: @Composable () -> Unit) {
 @Composable
 fun DawnScreen(game: GameState, onContinue: () -> Unit, onReplay: () -> Unit) {
     val phase = game.phase as Phase.Dawn
-    val night = game.nights.last()
-    val killed = night.killed?.let(game::player)
+    val killed = game.nights.last().killed?.let(game::player)
+    DawnContent(
+        night = phase.day,
+        killedName = killed?.name,
+        killedRole = killed?.role?.takeIf { game.rules.revealRoleOnDeath },
+        quiet = false,
+        aliveLine = aliveLine(game),
+    ) {
+        val over = game.winner != null
+        BigButton(
+            if (over) "See who won" else "Start talking · ${formatClock(game.rules.discussionSeconds)}",
+            onContinue,
+        )
+        HearItAgain(onReplay, Modifier.align(Alignment.CenterHorizontally))
+    }
+}
+
+/**
+ * The morning picture: a grave for whoever the Mafia got, or the rooster after a night
+ * with no death. [killedRole] is set only when roles are revealed.
+ */
+@Composable
+fun DawnContent(
+    night: Int,
+    killedName: String?,
+    killedRole: GameRole?,
+    quiet: Boolean,
+    aliveLine: String,
+    header: @Composable () -> Unit = { Ribbon("After night $night") },
+    footer: @Composable ColumnScope.() -> Unit,
+) {
     SunburstBackground(centerYFraction = 0.6f) {
         Column(Modifier.fillMaxSize().systemBarsPadding()) {
             Column(
-                Modifier.fillMaxWidth().padding(top = 22.dp),
+                Modifier.fillMaxWidth().padding(top = 22.dp, start = 22.dp, end = 22.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Ribbon("After night ${phase.day}")
+                header()
                 Text("Morning in Dry Gulch!", style = Type.headline, color = Western.Ink, modifier = Modifier.semantics { heading() })
             }
             BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                if (killed != null) {
+                if (killedName != null) {
                     val ratio = 330f / 454f
                     val h = minOf(maxHeight, maxWidth / ratio * 0.8f)
                     Box(Modifier.height(h).aspectRatio(ratio)) {
@@ -127,16 +158,16 @@ fun DawnScreen(game: GameState, onContinue: () -> Unit, onReplay: () -> Unit) {
                         ) {
                             Text("R.I.P.", style = Type.label, color = Western.WoodDeep)
                             Text(
-                                killed.name.uppercase(),
-                                style = Type.poster.copy(fontSize = if (killed.name.length > 7) 22.sp else 30.sp, lineHeight = 32.sp),
+                                killedName.uppercase(),
+                                style = Type.poster.copy(fontSize = if (killedName.length > 7) 22.sp else 30.sp, lineHeight = 32.sp),
                                 color = Western.WoodDeep,
                                 maxLines = 1,
                             )
-                            Text("Night ${phase.day} · Boot Hill", style = Type.body.copy(fontSize = 12.sp), color = Western.WoodDeep)
+                            Text("Night $night · Boot Hill", style = Type.body.copy(fontSize = 12.sp), color = Western.WoodDeep)
                         }
-                        if (game.rules.revealRoleOnDeath) {
+                        if (killedRole != null) {
                             Stamp(
-                                "Was ${roleWord(killed.role)}",
+                                "Was ${roleWord(killedRole)}",
                                 modifier = Modifier.align(Alignment.Center).offset(x = 40.dp, y = h * 0.16f).background(Western.Paper),
                                 angle = -8f,
                             )
@@ -149,33 +180,37 @@ fun DawnScreen(game: GameState, onContinue: () -> Unit, onReplay: () -> Unit) {
                 }
             }
             DayFooter {
-                if (killed != null) {
-                    Text("Last night the Mafia got ${killed.name}.", style = Type.bodyStrong.copy(fontSize = 19.sp), color = Western.Ink)
-                } else {
-                    Text("Someone was attacked in the night, but the Angel saved them!", style = Type.bodyStrong.copy(fontSize = 19.sp), color = Western.Ink)
-                }
-                Text(aliveLine(game), style = Type.body, color = Western.Ink)
-                Spacer(Modifier.height(4.dp))
-                val over = game.winner != null
-                BigButton(
-                    if (over) "See who won" else "Start talking · ${formatClock(game.rules.discussionSeconds)}",
-                    onContinue,
+                Text(
+                    when {
+                        killedName != null -> "Last night the Mafia got $killedName."
+                        quiet -> "A quiet night. The Mafia didn't strike."
+                        else -> "Someone was attacked in the night, but the Angel saved them!"
+                    },
+                    style = Type.bodyStrong.copy(fontSize = 19.sp),
+                    color = Western.Ink,
                 )
-                Row(
-                    Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .height(48.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable(role = Role.Button, onClick = onReplay)
-                        .padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    SpeakerIcon(22.dp)
-                    Text("Hear it again", style = Type.bodyStrong.copy(fontSize = 16.sp), color = Western.Ink)
-                }
+                Text(aliveLine, style = Type.body, color = Western.Ink)
+                Spacer(Modifier.height(4.dp))
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) { footer() }
             }
         }
+    }
+}
+
+/** Speaker button that has the narrator read the morning news again. */
+@Composable
+internal fun HearItAgain(onReplay: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .height(48.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(role = Role.Button, onClick = onReplay)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SpeakerIcon(22.dp)
+        Text("Hear it again", style = Type.bodyStrong.copy(fontSize = 16.sp), color = Western.Ink)
     }
 }
 
@@ -233,16 +268,7 @@ fun DiscussionScreen(
                 Text("Talk it out. Accuse, defend, bluff.", style = Type.body, color = Western.Ink)
             }
             Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                Box(
-                    Modifier
-                        .size(250.dp)
-                        .background(if (left == 0) Western.Red else Western.Cream, CircleShape)
-                        .border(5.dp, Western.Ink, CircleShape)
-                        .semantics { contentDescription = "${left / 60} minutes ${left % 60} seconds left" },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(formatClock(left), style = Type.poster.copy(fontSize = 72.sp, lineHeight = 74.sp), color = Western.Ink)
-                }
+                ClockFace(left)
             }
             DayFooter {
                 Text(
@@ -261,6 +287,21 @@ fun DiscussionScreen(
                 }
             }
         }
+    }
+}
+
+/** The big round discussion clock. Turns red when time is up. */
+@Composable
+internal fun ClockFace(secondsLeft: Int) {
+    Box(
+        Modifier
+            .size(250.dp)
+            .background(if (secondsLeft == 0) Western.Red else Western.Cream, CircleShape)
+            .border(5.dp, Western.Ink, CircleShape)
+            .semantics { contentDescription = "${secondsLeft / 60} minutes ${secondsLeft % 60} seconds left" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(formatClock(secondsLeft), style = Type.poster.copy(fontSize = 72.sp, lineHeight = 74.sp), color = Western.Ink)
     }
 }
 
@@ -386,6 +427,15 @@ fun VoteResultScreen(game: GameState, onContinue: () -> Unit) {
 
 @Composable
 fun GameOverScreen(game: GameState, winner: Team, onPlayAgain: () -> Unit, onDone: () -> Unit) {
+    GameOverScreen(game, winner) {
+        BigButton("Play again", onPlayAgain)
+        LinkButton("Back to the title", onDone)
+    }
+}
+
+/** Who won, who was who, and the whole story of the game, with [footer] for what comes next. */
+@Composable
+fun GameOverScreen(game: GameState, winner: Team, footer: @Composable ColumnScope.() -> Unit) {
     val townWon = winner == Team.TOWN
     SunburstBackground(centerYFraction = 0.12f) {
         Column(
@@ -431,60 +481,29 @@ fun GameOverScreen(game: GameState, winner: Team, onPlayAgain: () -> Unit, onDon
             }
 
             ReplaySection("The story") {
-                val maxDay = maxOf(game.nights.size, game.days.size)
-                for (n in 1..maxDay) {
-                    game.nights.getOrNull(n - 1)?.let { night ->
-                        Text("Night $n", style = Type.title.copy(fontSize = 19.sp), color = Western.Ink)
-                        night.picksBy(GameRole.MAFIA).forEach {
-                            ReplayLine("${game.player(it.by).name} (Mafia) went after ${game.player(it.target).name}.")
-                        }
-                        night.picksBy(GameRole.ANGEL).forEach {
-                            ReplayLine("${game.player(it.by).name} (Angel) protected ${game.player(it.target).name}.")
-                        }
-                        night.sheriffCheck?.let { c ->
-                            val sheriff = night.picksBy(GameRole.SHERIFF).first().by
-                            val verdict = c.role?.let { "the ${it.title()}" } ?: if (c.isMafia) "Mafia" else "not Mafia"
-                            ReplayLine("${game.player(sheriff).name} (Sheriff) checked ${game.player(c.target).name}: $verdict.")
-                        }
-                        when {
-                            night.killed != null -> ReplayLine("${game.player(night.killed!!).name} died.", strong = true)
-                            night.saved -> ReplayLine("The Angel saved ${game.player(night.mafiaTarget!!).name}!", strong = true)
-                        }
-                    }
-                    game.days.firstOrNull { it.day == n }?.let { day ->
-                        Text("Day $n", style = Type.title.copy(fontSize = 19.sp), color = Western.Ink)
-                        if (day.votes.isNotEmpty()) {
-                            day.votes.forEach { (voter, target) ->
-                                ReplayLine("${game.player(voter).name} voted " + (target?.let { game.player(it).name } ?: "to skip") + ".")
-                            }
-                        }
-                        ReplayLine(
-                            day.eliminated?.let { "${game.player(it).name} was run out of town." } ?: "Nobody was voted out.",
-                            strong = true,
-                        )
+                Replay.story(game).forEach { line ->
+                    when (line.style) {
+                        StoryLine.Style.HEADING -> Text(line.text, style = Type.title.copy(fontSize = 19.sp), color = Western.Ink)
+                        StoryLine.Style.LINE -> ReplayLine(line.text)
+                        StoryLine.Style.STRONG -> ReplayLine(line.text, strong = true)
                     }
                 }
             }
 
-            val guessers = game.players.filter { it.role == GameRole.VILLAGER }
-                .map { it to Game.guessScore(game, it.id) }
-                .filter { it.second.second > 0 }
+            val guessers = Replay.guessers(game)
             if (guessers.isNotEmpty()) {
                 ReplaySection("Best guessers") {
-                    guessers.sortedByDescending { it.second.first }.forEach { (p, score) ->
-                        ReplayLine("${p.name} called ${score.first} of ${score.second} Mafia targets.")
-                    }
+                    guessers.forEach { ReplayLine(it) }
                 }
             }
 
-            BigButton("Play again", onPlayAgain)
-            LinkButton("Back to the title", onDone)
+            footer()
         }
     }
 }
 
 @Composable
-private fun ReplaySection(title: String, content: @Composable () -> Unit) {
+internal fun ReplaySection(title: String, content: @Composable () -> Unit) {
     PaperNote(Modifier.fillMaxWidth(), angle = 0f) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, style = Type.title, color = Western.Ink, modifier = Modifier.semantics { heading() })

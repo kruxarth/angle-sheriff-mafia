@@ -7,6 +7,14 @@ import com.angelsheriffmafia.app.AfterTurn
 import com.angelsheriffmafia.app.data.SavedPlayer
 import com.angelsheriffmafia.app.data.Setup
 import com.angelsheriffmafia.app.ui.screens.AfterTurnScreen
+import com.angelsheriffmafia.app.ui.screens.FoundTable
+import com.angelsheriffmafia.app.ui.screens.HostStartScreen
+import com.angelsheriffmafia.app.ui.screens.JoinScreen
+import com.angelsheriffmafia.app.ui.screens.JoinUi
+import com.angelsheriffmafia.app.ui.screens.PlayModeScreen
+import com.angelsheriffmafia.app.ui.screens.TableActions
+import com.angelsheriffmafia.app.ui.screens.TableScreen
+import com.angelsheriffmafia.app.ui.screens.TableUi
 import com.angelsheriffmafia.app.ui.screens.DawnScreen
 import com.angelsheriffmafia.app.ui.screens.DiscussionScreen
 import com.angelsheriffmafia.app.ui.screens.GameOverScreen
@@ -32,6 +40,12 @@ import com.angelsheriffmafia.engine.Rules
 import com.angelsheriffmafia.engine.SheriffCheck
 import com.angelsheriffmafia.engine.Team
 import com.angelsheriffmafia.engine.VoteMode
+import com.angelsheriffmafia.lan.HostCommand
+import com.angelsheriffmafia.lan.HostSession
+import com.angelsheriffmafia.lan.JoinRequest
+import com.angelsheriffmafia.lan.PlayerAction
+import com.angelsheriffmafia.lan.Stage
+import com.angelsheriffmafia.lan.TableState
 import org.jetbrains.skia.EncodedImageFormat
 import java.io.File
 
@@ -133,4 +147,95 @@ fun main() {
     end = end.go(Action.OpenVote(listOf(end.id(Role.MAFIA)))).go(Action.Advance)
     shot("17-game-over") { GameOverScreen(end, (end.phase as Phase.GameOver).winner, {}, {}) }
     check((end.phase as Phase.GameOver).winner == Team.TOWN)
+
+    tableShots(setup)
+}
+
+private object NoActions : TableActions
+
+/** A hosted table played through the real host session, seen from different phones. */
+private fun tableShots(setup: Setup) {
+    shot("20-title-at-table") { TitleScreen(canContinue = true, onContinue = {}, onNewGame = {}, onHowToPlay = {}, atTable = true) }
+    shot("21-play-mode") { PlayModeScreen({}, {}, {}) }
+    shot("22-host-start") { HostStartScreen("Riya", "", true, false, null, {}, {}, {}, {}, {}, {}) }
+    shot("23-join") {
+        JoinScreen(
+            JoinUi(
+                found = listOf(FoundTable("Riya's table", "192.168.43.1:8765", 6, false), FoundTable("Dev's table", "192.168.1.20:8765", 9, true)),
+                address = "192.168.43.1:8765",
+                name = "Kabir",
+            ),
+            {}, {}, {}, {}, {},
+        )
+    }
+    shot("24-join-searching") { JoinScreen(JoinUi(name = "Kabir", error = "Couldn't reach a table at 192.168.1.9:8765. Are you on the same Wi-Fi or hotspot?"), {}, {}, {}, {}, {}) }
+    shot("25-rules-own-phones") { RulesScreen(setup, {}, {}, ownPhones = true, players = 7) }
+
+    val session = HostSession(TableState(name = HostSession.tableName("Riya")))
+    session.setHost("Riya", null, plays = true).getOrThrow()
+    val guests = names.drop(1).take(6)
+    val tokens: Map<String, String> = guests.associateWith { session.join(JoinRequest(it)).token!! }
+    tokens.values.take(4).forEach { t -> session.streamOpened(session.seatIdFor(t)!!) }
+    val url = "http://192.168.43.1:8765/"
+    fun ui(token: String?) = TableUi(view = token?.let { session.view(it)!! } ?: session.hostView(), isHost = token == null, joinUrl = url)
+    fun table(name: String, token: String?, holding: Boolean = false) = shot(name) { TableScreen(ui(token), NoActions, previewHolding = holding) }
+
+    table("26-host-lobby", null)
+    shot("27-host-lobby-no-wifi") { TableScreen(ui(null).copy(joinUrl = null), NoActions) }
+    table("28-guest-lobby", tokens.getValue("Aarav"))
+
+    session.host(HostCommand.Deal).getOrThrow()
+    val seats: List<String?> = listOf(null) + tokens.values
+    fun view(token: String?) = token?.let { session.view(it)!! } ?: session.hostView()
+    fun me(token: String?) = view(token).game!!.me!!
+    fun act(token: String?, action: PlayerAction) {
+        if (token == null) session.hostAct(action).getOrThrow() else check(session.act(token, action).ok)
+    }
+    val byRole = seats.groupBy { me(it).role }
+    val mafia = byRole.getValue(Role.MAFIA)
+    val sheriff = byRole.getValue(Role.SHERIFF).single()
+    table("29-deal", mafia.first())
+    table("30-deal-held", mafia.first(), holding = true)
+    seats.forEach { act(it, PlayerAction.Seen) }
+
+    // Night 1: one Mafia member picks, so the other sees it on the wire.
+    val victim = view(mafia.first()).game!!.night!!.targets.first { t -> view(null).game!!.players.first { it.id == t }.let { p -> seats.none { me(it).id == p.id && me(it).role == Role.MAFIA } } }
+    act(mafia.first(), PlayerAction.Pick(victim))
+    table("31-night-mafia-wire", mafia.last())
+    act(sheriff, PlayerAction.Pick(me(mafia.last()).id))
+    table("32-night-sheriff-held", sheriff, holding = true)
+    table("33-night-villager", byRole.getValue(Role.VILLAGER).first())
+    seats.filter { it !in mafia && it != sheriff }.forEach { s -> act(s, PlayerAction.Pick(view(s).game!!.night!!.targets.first())) }
+    act(mafia.last(), PlayerAction.Pick(victim))
+    table("34-dawn-host", null)
+    table("35-dawn-guest", tokens.values.first { it != null && view(it).game!!.players.first { p -> p.id == me(it).id }.alive })
+
+    session.host(HostCommand.StartTalking).getOrThrow()
+    table("36-discussion-host", null)
+    session.host(HostCommand.StartVote).getOrThrow()
+    val living = seats.filter { view(it).game!!.vote!!.canVote }
+    table("37-vote-guest", living.last())
+    living.take(3).forEach { act(it, PlayerAction.Vote(me(mafia.first()).id.takeIf { m -> m != me(it).id } ?: me(sheriff).id)) }
+    table("38-vote-host-waiting", null)
+    session.host(HostCommand.EndVote).getOrThrow()
+    table("39-result", living.last())
+
+    // Play it out to the end: the Mafia take the first town member each night, the town votes out nobody.
+    var guard = 0
+    while (view(null).game!!.stage != Stage.OVER && guard++ < 40) {
+        val g = view(null).game!!
+        when (g.stage) {
+            Stage.RESULT, Stage.DAWN -> session.host(if (g.stage == Stage.DAWN) HostCommand.StartTalking else HostCommand.Continue).getOrThrow()
+            Stage.DISCUSSION -> session.host(HostCommand.StartVote).getOrThrow()
+            Stage.VOTE -> session.host(HostCommand.EndVote).getOrThrow()
+            Stage.NIGHT -> {
+                val alive = seats.filter { view(it).game!!.night!!.canPick }
+                val town = mafia.map { view(it).game!!.night!! }.first { it.canPick }.targets.first()
+                alive.forEach { s -> act(s, PlayerAction.Pick(if (me(s).role == Role.MAFIA) town else view(s).game!!.night!!.targets.first())) }
+            }
+            else -> error("Stuck at ${g.stage}")
+        }
+    }
+    table("40-over-host", null)
+    table("41-over-guest", tokens.values.first())
 }

@@ -17,7 +17,9 @@ dependencyResolutionManagement {
 rootProject.name = "AngelSheriffMafia"
 
 include(":engine")
-// The Android app needs the Android SDK. Build only the pure-Kotlin engine with -PengineOnly=true.
+// Playing on your own phones over the local network: host session, web server, client. Pure Kotlin.
+include(":lan")
+// The Android app needs the Android SDK. Build only the pure-Kotlin modules with -PengineOnly=true.
 if (providers.gradleProperty("engineOnly").orNull != "true") {
     include(":app")
 } else {

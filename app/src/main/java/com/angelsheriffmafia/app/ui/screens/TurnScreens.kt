@@ -182,7 +182,7 @@ fun RoleCardScreen(game: GameState, player: Player, nextPlayer: String?, onDone:
 }
 
 @Composable
-private fun PosterBack() {
+internal fun PosterBack() {
     PaperPanel(Modifier.fillMaxWidth(0.86f).aspectRatio(0.7f)) {
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text("?", style = Type.poster.copy(fontSize = 120.sp, lineHeight = 120.sp), color = Western.PaperText)
@@ -192,7 +192,7 @@ private fun PosterBack() {
 }
 
 @Composable
-private fun PaperPanel(modifier: Modifier = Modifier, angle: Float = -1.6f, content: @Composable () -> Unit) {
+internal fun PaperPanel(modifier: Modifier = Modifier, angle: Float = -1.6f, content: @Composable () -> Unit) {
     Box(
         modifier
             .rotate(angle)
@@ -254,7 +254,7 @@ fun WantedPoster(role: Role, gang: List<String>) {
 
 /* ---------- Night pick ---------- */
 
-private fun prompt(role: Role) = when (role) {
+internal fun prompt(role: Role) = when (role) {
     Role.MAFIA -> "Who gets it\ntonight?"
     Role.ANGEL -> "Who will you\nprotect tonight?"
     Role.SHERIFF -> "Who will you\nlook into?"

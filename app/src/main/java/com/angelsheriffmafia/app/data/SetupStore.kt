@@ -19,12 +19,18 @@ class SetupStore(private val context: Context) {
     private val playersKey = stringPreferencesKey("players")
     private val rulesKey = stringPreferencesKey("rules")
     private val narratorKey = booleanPreferencesKey("narrator_on")
+    private val myNameKey = stringPreferencesKey("my_name")
+    private val myPronunciationKey = stringPreferencesKey("my_pronunciation")
+    private val hostPlaysKey = booleanPreferencesKey("host_plays")
 
     val setup: Flow<Setup> = context.dataStore.data.map { prefs ->
         Setup(
             players = prefs[playersKey]?.let { runCatching { json.decodeFromString(ListSerializer(SavedPlayer.serializer()), it) }.getOrNull() }.orEmpty(),
             rules = prefs[rulesKey]?.let { runCatching { json.decodeFromString(Rules.serializer(), it) }.getOrNull() } ?: Rules(),
             narratorOn = prefs[narratorKey] ?: true,
+            myName = prefs[myNameKey].orEmpty(),
+            myPronunciation = prefs[myPronunciationKey].orEmpty(),
+            hostPlays = prefs[hostPlaysKey] ?: true,
         )
     }
 
@@ -33,6 +39,9 @@ class SetupStore(private val context: Context) {
             it[playersKey] = json.encodeToString(ListSerializer(SavedPlayer.serializer()), setup.players)
             it[rulesKey] = json.encodeToString(Rules.serializer(), setup.rules)
             it[narratorKey] = setup.narratorOn
+            it[myNameKey] = setup.myName
+            it[myPronunciationKey] = setup.myPronunciation
+            it[hostPlaysKey] = setup.hostPlays
         }
     }
 }

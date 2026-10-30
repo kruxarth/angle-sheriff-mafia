@@ -37,6 +37,8 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 
 dependencies {
     implementation(project(":engine"))
+    implementation(project(":lan"))
+    implementation(libs.zxing.core)
     implementation("org.jetbrains.compose.ui:ui-desktop:1.5.12")
     implementation("org.jetbrains.compose.foundation:foundation-desktop:1.5.12")
     implementation("org.jetbrains.compose.material3:material3-desktop:1.5.12")

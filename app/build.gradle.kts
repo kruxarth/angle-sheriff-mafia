@@ -13,8 +13,19 @@ android {
         applicationId = "com.angelsheriffmafia.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+    }
+
+    signingConfigs {
+        // One shared debug key, so each new build installs over the last one, and a phone can
+        // install the copy a host shares. Debug keys are public by design: never use it for a store.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
@@ -43,6 +54,9 @@ kotlin {
 
 dependencies {
     implementation(project(":engine"))
+    implementation(project(":lan"))
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.zxing.core)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

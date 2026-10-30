@@ -4,6 +4,7 @@ import android.app.Application
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.angelsheriffmafia.app.audio.Narration
 import com.angelsheriffmafia.app.audio.Narrator
 import com.angelsheriffmafia.app.audio.NarratorLine
 import com.angelsheriffmafia.app.audio.Say
@@ -18,9 +19,7 @@ import com.angelsheriffmafia.engine.GameState
 import com.angelsheriffmafia.engine.NewPlayer
 import com.angelsheriffmafia.engine.Phase
 import com.angelsheriffmafia.engine.PlayerId
-import com.angelsheriffmafia.engine.Role
 import com.angelsheriffmafia.engine.Step
-import com.angelsheriffmafia.engine.Team
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -183,8 +182,7 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
 
     fun replayDawn() {
         val game = _ui.value.game ?: return
-        val night = game.nights.lastOrNull() ?: return
-        narrator.say(dawnNarration(game, night.killed, night.mafiaTarget))
+        narrator.say(Narration.lastDawn(game))
     }
 
     fun clearError() = _ui.update { it.copy(error = null) }
@@ -210,48 +208,10 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun save(state: GameState?) = gameStore.save(state)
 
-    /** Only public information is ever spoken. Sheriff results stay on the screen. */
-    private fun narrationFor(state: GameState, events: List<Event>): List<Say> = events.flatMap { event ->
-        when (event) {
-            is Event.NightFell -> listOf(Say.Line(NarratorLine.NIGHT_FALLS))
-            is Event.Killed -> dawnNarration(state, event.player, event.player)
-            is Event.Saved -> dawnNarration(state, null, event.target)
-            is Event.Revote -> listOf(Say.Line(NarratorLine.TIE))
-            is Event.VotedOut -> listOf(Say.Text(state.player(event.player).spokenName), Say.Line(NarratorLine.RUN_OUT)) +
-                roleLine(state, event.player)
-            is Event.NobodyVotedOut -> listOf(Say.Line(NarratorLine.NOBODY_OUT))
-            is Event.GameWon -> if (state.phase is Phase.GameOver) {
-                listOf(Say.Line(if (event.winner == Team.TOWN) NarratorLine.TOWN_WINS else NarratorLine.MAFIA_WINS))
-            } else {
-                emptyList()
-            }
-            is Event.SheriffLearned -> emptyList()
+    private fun narrationFor(state: GameState, events: List<Event>): List<Say> = Narration.forEvents(state, events) +
+        if (events.isEmpty() && state.phase is Phase.Discussion && (state.phase as Phase.Discussion).startedAtMillis != null) {
+            listOf(Say.Line(NarratorLine.DISCUSS))
+        } else {
+            emptyList()
         }
-    } + if (events.isEmpty() && state.phase is Phase.Discussion && (state.phase as Phase.Discussion).startedAtMillis != null) {
-        listOf(Say.Line(NarratorLine.DISCUSS))
-    } else {
-        emptyList()
-    }
-
-    private fun dawnNarration(state: GameState, killed: PlayerId?, target: PlayerId?): List<Say> = buildList {
-        add(Say.Line(NarratorLine.MORNING))
-        if (killed != null) {
-            add(Say.Text(state.player(killed).spokenName))
-            add(Say.Line(NarratorLine.WAS_KILLED))
-            addAll(roleLine(state, killed))
-        } else if (target != null) {
-            add(Say.Line(NarratorLine.SAVED))
-        }
-    }
-
-    private fun roleLine(state: GameState, player: PlayerId): List<Say> {
-        if (!state.rules.revealRoleOnDeath) return emptyList()
-        val line = when (state.player(player).role) {
-            Role.MAFIA -> NarratorLine.WAS_MAFIA
-            Role.ANGEL -> NarratorLine.WAS_ANGEL
-            Role.SHERIFF -> NarratorLine.WAS_SHERIFF
-            Role.VILLAGER -> NarratorLine.WAS_VILLAGER
-        }
-        return listOf(Say.Line(line))
-    }
 }
