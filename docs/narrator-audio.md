@@ -35,9 +35,14 @@ endings.
 | `nobody_out` | Nobody leaves town today. |
 | `town_wins` | The Mafia are gone. The town of Dry Gulch is safe. |
 | `mafia_wins` | The Mafia have taken over Dry Gulch. |
+| `deal_own` | Welcome to Dry Gulch. Check your phone for your role, and keep it to yourself. |
+| `night_falls_own` | Night falls on Dry Gulch. Make your choice on your phone, and keep your eyes to yourself. |
+| `quiet_night` | It was a quiet night. Nobody was attacked. |
+
+The last three are for games on everyone's own phone, where the host's phone narrates.
 
 The source of truth for keys and wording is `NarratorLine` in
 `app/src/main/java/com/angelsheriffmafia/app/audio/Narrator.kt`.
 
 Only public information is ever spoken. The Sheriff's result and everyone's night picks
-stay on the screen of the player holding the phone.
+stay on the screen of the player holding the phone, or on each player's own phone.

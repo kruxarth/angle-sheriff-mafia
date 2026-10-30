@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      # Writes the debug APK to a GitHub release on pushes to main.
+      contents: write
     steps:
       - uses: actions/checkout@v7
 
@@ -18,10 +21,10 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      - name: Engine tests, APKs and lint
+      - name: Tests, APKs and lint
         run: |
           set +e
-          ./gradlew --no-daemon :engine:test :app:assembleDebug :app:assembleRelease :app:lintDebug 2>&1 | tee build.log
+          ./gradlew --no-daemon :engine:test :lan:test :app:assembleDebug :app:assembleRelease :app:lintDebug 2>&1 | tee build.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             # Surface the useful lines as annotations, which stay readable through the checks API.
@@ -63,4 +66,27 @@ jobs:
           path: |
             build.log
             engine/build/reports
+            lan/build/reports
             app/build/reports
+
+      # Each push to main puts its debug APK on the release for its version, v<version>-debug,
+      # so the newest build of a version replaces the older one and a new version gets a new release.
+      - name: Publish the debug APK as a release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts)
+          [ -n "$version" ] || { echo "::error title=Release::No versionName in app/build.gradle.kts"; exit 1; }
+          tag="v${version}-debug"
+          apk="app/build/outputs/apk/debug/app-debug.apk#angel-sheriff-mafia-${version}-debug.apk"
+          notes="Debug build of ${version} (commit ${GITHUB_SHA::7}) for sideloading."
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" -f sha="$GITHUB_SHA" -F force=true >/dev/null
+            gh release upload "$tag" "$apk" --clobber
+            gh release edit "$tag" --notes "$notes"
+          else
+            gh release create "$tag" "$apk" --title "v${version} (debug build)" --notes "$notes" \
+              --prerelease --target "$GITHUB_SHA"
+          fi
+          echo "Published $tag: $(gh release view "$tag" --json url --jq .url)"
