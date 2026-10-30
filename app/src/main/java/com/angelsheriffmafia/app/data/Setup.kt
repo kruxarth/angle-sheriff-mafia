@@ -11,4 +11,9 @@ data class Setup(
     val players: List<SavedPlayer> = emptyList(),
     val rules: Rules = Rules(),
     val narratorOn: Boolean = true,
+    /** This phone owner's name, for hosting or joining a table. */
+    val myName: String = "",
+    val myPronunciation: String = "",
+    /** Whether the host plays at their own table, or only runs it. */
+    val hostPlays: Boolean = true,
 )

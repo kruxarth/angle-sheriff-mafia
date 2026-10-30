@@ -14,6 +14,7 @@ data class GameState(
     val days: List<DayRecord> = emptyList(),
     val seed: Long,
     val randomDraws: Int = 0,
+    val mode: PlayMode = PlayMode.PASS_PHONE,
 ) {
     fun player(id: PlayerId): Player = players.first { it.id == id }
     val alive: List<Player> get() = players.filter { it.alive }
@@ -32,9 +33,12 @@ data class GameState(
 
     val currentNight: NightRecord? get() = (phase as? Phase.Night)?.let { nights.last() }
 
-    /** Whose turn it is on the phone right now, or null when the phone sits in the middle. */
+    /**
+     * Whose turn it is on the phone right now, or null when the phone sits in the middle.
+     * Always null with own phones, where nobody waits for a turn.
+     */
     val playerOnTurn: PlayerId?
-        get() = when (val p = phase) {
+        get() = if (mode == PlayMode.OWN_PHONES) null else when (val p = phase) {
             is Phase.RoleReveal -> players[p.index].id
             is Phase.Night -> nights.last().turnOrder[p.turn]
             is Phase.Voting -> if (rules.voteMode == VoteMode.SECRET) secretVoters()[p.turn] else null
@@ -66,6 +70,9 @@ sealed interface Action {
     data object Advance : Action
 
     data class StartDiscussion(val atMillis: Long) : Action
+
+    /** More time on the discussion clock. */
+    data class AddTime(val seconds: Int) : Action
     data object StartVote : Action
 
     /** Secret vote by the player on turn. A null target skips. */
@@ -73,6 +80,15 @@ sealed interface Action {
 
     /** Open vote: the players who got the most votes. One is voted out, several is a tie, none means nobody. */
     data class OpenVote(val top: List<PlayerId>) : Action
+
+    /** Own phones: night falls even though not everyone has checked their role. */
+    data object EndDeal : Action
+
+    /** Own phones: the night's time is up. Whatever has been chosen counts. */
+    data object EndNight : Action
+
+    /** Own phones: count the votes cast so far. */
+    data object EndVote : Action
 }
 
 sealed interface Event {
@@ -80,6 +96,9 @@ sealed interface Event {
     data class SheriffLearned(val by: PlayerId, val check: SheriffCheck) : Event
     data class Killed(val player: PlayerId) : Event
     data class Saved(val target: PlayerId) : Event
+
+    /** Own phones: the night ran out before any Mafia member chose, so nobody was attacked. */
+    data object QuietNight : Event
     data class Revote(val tied: List<PlayerId>) : Event
     data class VotedOut(val player: PlayerId, val byRandomTieBreak: Boolean) : Event
     data object NobodyVotedOut : Event
@@ -92,7 +111,12 @@ class GameSetupException(message: String) : IllegalArgumentException(message)
 
 object Game {
 
-    fun newGame(names: List<NewPlayer>, rules: Rules, seed: Long = Random.nextLong()): GameState {
+    fun newGame(
+        names: List<NewPlayer>,
+        rules: Rules,
+        seed: Long = Random.nextLong(),
+        mode: PlayMode = PlayMode.PASS_PHONE,
+    ): GameState {
         val trimmed = names.map { it.copy(name = it.name.trim()) }
         if (trimmed.size < Rules.MIN_PLAYERS) throw GameSetupException("You need at least ${Rules.MIN_PLAYERS} players.")
         if (trimmed.size > Rules.MAX_PLAYERS) throw GameSetupException("At most ${Rules.MAX_PLAYERS} players can play.")
@@ -115,7 +139,8 @@ object Game {
         val players = trimmed.mapIndexed { i, p ->
             Player(id = i, name = p.name, role = roles[i], pronunciation = p.pronunciation?.trim()?.ifEmpty { null })
         }
-        return GameState(players = players, rules = rules, phase = Phase.RoleReveal(0), seed = seed, randomDraws = 1)
+        val phase = if (mode == PlayMode.OWN_PHONES) Phase.Deal() else Phase.RoleReveal(0)
+        return GameState(players = players, rules = rules, phase = phase, seed = seed, randomDraws = 1, mode = mode)
     }
 
     fun reduce(state: GameState, action: Action): Result<Step> = runCatching { apply(state, action) }
@@ -149,6 +174,44 @@ object Game {
         return mafiaTurns.lastOrNull() == by
     }
 
+    /**
+     * Own phones: tonight's lead Mafia member. If time runs out while the Mafia are split,
+     * the lead's choice settles it. The lead moves round with each night's starting player.
+     */
+    fun leadMafia(state: GameState): PlayerId? {
+        val night = state.currentNight ?: return null
+        return night.turnOrder.firstOrNull { state.player(it).role == Role.MAFIA }
+    }
+
+    /** Own phones: true once every living Mafia member has chosen the same target. Their choice is then locked. */
+    fun mafiaAgreed(state: GameState): Boolean {
+        val night = state.currentNight ?: return false
+        val living = state.alive.filter { it.role == Role.MAFIA }.map { it.id }.toSet()
+        val picks = night.picksBy(Role.MAFIA).filter { it.by in living }
+        return living.isNotEmpty() && picks.size == living.size && picks.map { it.target }.toSet().size == 1
+    }
+
+    /** Own phones: true when [by] has made their move for the current round (deal, night or vote). */
+    fun hasActed(state: GameState, by: PlayerId): Boolean = when (val phase = state.phase) {
+        is Phase.Deal -> by in phase.seen
+        is Phase.Night -> state.nights.last().picks.any { it.by == by }
+        is Phase.Voting -> by in phase.votes
+        else -> false
+    }
+
+    /**
+     * Own phones: who still has to act before the round can end. During the deal and the vote
+     * this is public. During the night it is secret and only the host uses it.
+     */
+    fun waitingFor(state: GameState): List<PlayerId> = when (state.phase) {
+        is Phase.Deal -> state.players.map { it.id }.filter { !hasActed(state, it) }
+        is Phase.Night -> state.alive.map { it.id }.filter {
+            !hasActed(state, it) || (state.player(it).role == Role.MAFIA && !mafiaAgreed(state))
+        }
+        is Phase.Voting -> state.alive.map { it.id }.filter { !hasActed(state, it) }
+        else -> emptyList()
+    }
+
     /** How many of the Mafia's targets [player] guessed right as a villager, out of nights guessed. */
     fun guessScore(state: GameState, player: PlayerId): Pair<Int, Int> {
         val guessed = state.nights.filter { it.mafiaTarget != null }
@@ -159,7 +222,12 @@ object Game {
     private fun apply(state: GameState, action: Action): Step {
         val phase = state.phase
         return when (action) {
-            is Action.RoleSeen -> {
+            is Action.RoleSeen -> if (state.mode == PlayMode.OWN_PHONES) {
+                check(phase is Phase.Deal) { "Roles are not being dealt." }
+                require(state.players.any { it.id == action.by }) { "No such player." }
+                val seen = phase.seen + action.by
+                if (seen.size == state.players.size) startNight(state, 1) else Step(state.copy(phase = Phase.Deal(seen)))
+            } else {
                 check(phase is Phase.RoleReveal) { "Roles are not being dealt." }
                 require(action.by == state.playerOnTurn) { "It is not this player's turn." }
                 if (phase.index + 1 < state.players.size) {
@@ -184,19 +252,41 @@ object Game {
                 Step(state.copy(phase = phase.copy(startedAtMillis = phase.startedAtMillis ?: action.atMillis)))
             }
 
+            is Action.AddTime -> {
+                check(phase is Phase.Discussion) { "Not discussing." }
+                require(action.seconds > 0) { "Add a positive amount of time." }
+                Step(state.copy(phase = phase.copy(extraSeconds = phase.extraSeconds + action.seconds)))
+            }
+
             is Action.StartVote -> {
                 check(phase is Phase.Discussion) { "Not discussing." }
                 Step(state.copy(phase = Phase.Voting(phase.day, candidates = state.alive.map { it.id })))
             }
 
-            is Action.Vote -> secretVote(state, action)
+            is Action.Vote -> if (state.mode == PlayMode.OWN_PHONES) ownPhoneVote(state, action) else secretVote(state, action)
 
             is Action.OpenVote -> {
                 check(phase is Phase.Voting) { "Not voting." }
+                check(state.mode == PlayMode.PASS_PHONE) { "Everyone votes on their own phone." }
                 check(state.rules.voteMode == VoteMode.OPEN) { "This game uses a secret vote." }
                 require(action.top.distinct().size == action.top.size) { "A player is listed twice." }
                 require(action.top.all { it in phase.candidates }) { "Only candidates can be voted out." }
                 finishVote(state, phase, action.top, votes = emptyMap())
+            }
+
+            is Action.EndDeal -> {
+                check(state.mode == PlayMode.OWN_PHONES && phase is Phase.Deal) { "Roles are not being dealt." }
+                startNight(state, 1)
+            }
+
+            is Action.EndNight -> {
+                check(state.mode == PlayMode.OWN_PHONES && phase is Phase.Night) { "It is not night." }
+                resolveNight(state, mutableListOf())
+            }
+
+            is Action.EndVote -> {
+                check(state.mode == PlayMode.OWN_PHONES && phase is Phase.Voting) { "Not voting." }
+                tally(state, phase, phase.votes)
             }
         }
     }
@@ -216,13 +306,25 @@ object Game {
     private fun pick(state: GameState, action: Action.Pick): Step {
         val phase = state.phase
         check(phase is Phase.Night) { "It is not night." }
-        require(action.by == state.playerOnTurn) { "It is not this player's turn." }
+        val me = state.player(action.by)
+        val ownPhones = state.mode == PlayMode.OWN_PHONES
+        if (ownPhones) {
+            require(me.alive) { "Only living players choose at night." }
+            if (me.role == Role.MAFIA) {
+                check(!mafiaAgreed(state)) { "Your gang has already agreed." }
+            } else {
+                check(!hasActed(state, me.id)) { "You've already chosen tonight." }
+            }
+        } else {
+            require(action.by == state.playerOnTurn) { "It is not this player's turn." }
+        }
         require(action.target in validNightTargets(state, action.by)) { "That player can't be picked." }
 
-        val me = state.player(action.by)
         val night = state.nights.last()
         val events = mutableListOf<Event>()
-        var updated = night.copy(picks = night.picks + NightPick(action.by, me.role, action.target))
+        // With own phones a Mafia member can change their pick until the gang agrees.
+        val earlier = if (ownPhones) night.picks.filter { it.by != action.by } else night.picks
+        var updated = night.copy(picks = earlier + NightPick(action.by, me.role, action.target))
         if (me.role == Role.SHERIFF) {
             val target = state.player(action.target)
             val check = SheriffCheck(
@@ -234,21 +336,42 @@ object Game {
             events += Event.SheriffLearned(me.id, check)
         }
         val nights = state.nights.dropLast(1) + updated
+        if (ownPhones) {
+            val next = state.copy(nights = nights)
+            return if (waitingFor(next).isEmpty()) resolveNight(next, events) else Step(next, events)
+        }
         if (phase.turn + 1 < night.turnOrder.size) {
             return Step(state.copy(phase = phase.copy(turn = phase.turn + 1), nights = nights), events)
         }
         return resolveNight(state.copy(nights = nights), events)
     }
 
+    /** Who the Mafia go after tonight, or null if no Mafia member chose anyone. */
+    private fun mafiaTarget(state: GameState, night: NightRecord): PlayerId? {
+        val picks = night.picksBy(Role.MAFIA)
+        // On one phone, the last Mafia member to hold it decides.
+        if (state.mode == PlayMode.PASS_PHONE) return picks.last().target
+        if (picks.isEmpty()) return null
+        // Own phones: the gang's agreed or majority choice. On a split, the lead Mafia's pick wins.
+        val counts = picks.groupingBy { it.target }.eachCount()
+        val most = counts.values.max()
+        val top = counts.filterValues { it == most }.keys
+        if (top.size == 1) return top.single()
+        return night.turnOrder.firstNotNullOf { id -> picks.firstOrNull { it.by == id }?.target?.takeIf { it in top } }
+    }
+
     private fun resolveNight(state: GameState, events: MutableList<Event>): Step {
         val night = state.nights.last()
-        // The last Mafia member to hold the phone decides.
-        val target = night.picksBy(Role.MAFIA).last().target
+        val target = mafiaTarget(state, night)
         val protected = night.picksBy(Role.ANGEL).lastOrNull()?.target
-        val killed = target.takeIf { it != protected }
+        val killed = target?.takeIf { it != protected }
         val resolved = night.copy(mafiaTarget = target, protected = protected, killed = killed)
         val players = state.players.map { if (it.id == killed) it.copy(alive = false) else it }
-        events += if (killed != null) Event.Killed(killed) else Event.Saved(target)
+        events += when {
+            killed != null -> Event.Killed(killed)
+            target != null -> Event.Saved(target)
+            else -> Event.QuietNight
+        }
         val next = state.copy(players = players, nights = state.nights.dropLast(1) + resolved, phase = Phase.Dawn(night.night))
         next.winner?.let { events += Event.GameWon(it) }
         return Step(next, events)
@@ -259,16 +382,37 @@ object Game {
         check(phase is Phase.Voting) { "Not voting." }
         check(state.rules.voteMode == VoteMode.SECRET) { "This game uses an open vote." }
         require(action.by == state.playerOnTurn) { "It is not this player's turn." }
+        checkBallot(state, phase, action)
+        val votes = phase.votes + (action.by to action.target)
+        if (phase.turn + 1 < state.secretVoters().size) {
+            return Step(state.copy(phase = phase.copy(turn = phase.turn + 1, votes = votes)))
+        }
+        return tally(state, phase, votes)
+    }
+
+    /** Own phones: every living player votes once, in any order. */
+    private fun ownPhoneVote(state: GameState, action: Action.Vote): Step {
+        val phase = state.phase
+        check(phase is Phase.Voting) { "Not voting." }
+        val me = state.player(action.by)
+        require(me.alive) { "Only living players vote." }
+        check(action.by !in phase.votes) { "You've already voted." }
+        checkBallot(state, phase, action)
+        val votes = phase.votes + (action.by to action.target)
+        val next = phase.copy(votes = votes)
+        return if (state.alive.all { it.id in votes }) tally(state, next, votes) else Step(state.copy(phase = next))
+    }
+
+    private fun checkBallot(state: GameState, phase: Phase.Voting, action: Action.Vote) {
         if (action.target == null) {
             require(state.rules.allowSkipVote) { "Skipping is not allowed." }
         } else {
             require(action.target in phase.candidates) { "That player is not up for the vote." }
             require(action.target != action.by) { "You can't vote for yourself." }
         }
-        val votes = phase.votes + (action.by to action.target)
-        if (phase.turn + 1 < state.secretVoters().size) {
-            return Step(state.copy(phase = phase.copy(turn = phase.turn + 1, votes = votes)))
-        }
+    }
+
+    private fun tally(state: GameState, phase: Phase.Voting, votes: Map<PlayerId, PlayerId?>): Step {
         val counts = votes.values.filterNotNull().groupingBy { it }.eachCount()
         val skips = votes.values.count { it == null }
         val most = counts.values.maxOrNull() ?: 0

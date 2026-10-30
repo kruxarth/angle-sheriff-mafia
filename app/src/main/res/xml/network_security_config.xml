@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <!-- Phones reach the host's table over the local Wi-Fi or hotspot by IP address, with plain
+         HTTP: there's no internet server, and no certificate can name a phone's local address.
+         Nothing else in the app uses the network. -->
+    <base-config cleartextTrafficPermitted="true" tools:ignore="InsecureBaseConfiguration" />
+</network-security-config>
